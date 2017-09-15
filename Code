@@ -1,0 +1,112 @@
+library(ISLR)
+library(caret)
+library(ggplot2)
+library(gmodels)
+library(tidyverse)
+library(broom)
+library(gmodels)
+library("mvoutlier")
+library(corrplot)
+library(psych)
+
+data("Carseats")
+
+Carseats_US <- Carseats[Carseats$US=='Yes',]
+
+# Inspecting the influence of the categorical attributes on the sales' variability, using ANOVA.
+Anova_Model <- aov(Sales ~ ShelveLoc+Urban, data = Carseats_US)
+summary(Anova_Model)
+
+# The shelf location in the store is much more significant than urban location
+# Another way of seeing this fact in numbers:
+Carseats_US %>%
+  group_by(ShelveLoc) %>%
+  summarise(mean(Sales))
+ggplot(Carseats_US, aes(x=ShelveLoc, y=Sales))+geom_boxplot()
+
+Carseats_US %>%
+  group_by(Urban) %>%
+  summarise(mean(Sales))
+ggplot(Carseats_US, aes(x=Urban, y=Sales))+geom_boxplot()
+
+# And visualized:
+ggplot(Carseats_US, aes(x=ShelveLoc, y=Sales, fill=Urban))+geom_boxplot()
+
+# Checking correlations among the numeric attributes in the data set
+Carseats_Num <- Carseats_US[c(2:6,8:9)]
+corr <- cor(Carseats_Num)
+corrplot(corr,method = 'number')
+psych::pairs.panels(Carseats_Num)
+
+# Fitting the Linear Regression model, including all variables
+Lm_1 <- train(Sales ~ ., data = Carseats_US, method='lm')
+summary(Lm_1)
+
+# Checking the attributes importance and colinearity
+varImp(Lm_1)
+HighlyCorrelated <- findCorrelation(corr, cutoff = 0.7)
+
+# Printing the results
+for (i in HighlyCorrelated) {
+  print(names(Carseats_Num))
+  
+  }
+
+# Fitting another Linear Regression model w/o the least significant predictors and correlated variables
+f <- as.formula(Sales ~ Price + ShelveLoc + Age + Advertising + Income + Urban)
+Lm_2 <- train(f, data = Carseats_US, method='lm')
+
+# Compering the 2 models
+Lm_Comp <- resamples(list(Lm_1, Lm_2))
+summary(Lm_Comp)
+dotplot(Lm_Comp)
+# The second model sports lower R^2 and higher RMSE.
+
+## Preprocessing  the data for fitting other methods
+
+# Normalize function
+normalize <- function(x){
+  return((x-min(x)) / (max(x)-min(x)))
+}
+
+Carseats_US_Norm <- normalize(Carseats_US[c(1:6, 8:9)])
+Carseats_US_Norm <- cbind(Carseats_US_Norm, Carseats_US['ShelveLoc'], Carseats_US['Urban'])
+
+# Fitting other models using other linear algorythms
+Lm_Ctrl <- trainControl(method = 'repeatedcv', number = 10, repeats = 3)
+
+set.seed(34)
+Fit_Lm <- train(Sales ~ ., data = Carseats_US, method='lm', trControl = Lm_Ctrl)
+
+set.seed(34)
+Fit_Glm <- train(Sales ~ ., data = Carseats_US, method='glm', trControl = Lm_Ctrl)
+
+set.seed(34)
+Fit_Glmnet <- train(Sales ~ ., data = Carseats_US, method='glmnet', trControl = Lm_Ctrl)
+
+# Compering the 3 models
+Models_Results <- resamples(list(LM = Fit_Lm, 
+                                 GLM = Fit_Glm, 
+                                 GLMNET = Fit_Glmnet))
+
+summary(Models_Results)
+dotplot(Models_Results)
+
+# Same models with normalized numeric predictors
+set.seed(34)
+Fit_Lm_Norm <- train(Sales ~ ., data = Carseats_US_Norm, method='lm', trControl = Lm_Ctrl)
+
+set.seed(34)
+Fit_Glm_Norm <- train(Sales ~ ., data = Carseats_US_Norm, method='glm', trControl = Lm_Ctrl)
+
+set.seed(34)
+Fit_Glmnet_Norm <- train(Sales ~ ., data = Carseats_US_Norm, method='glmnet', trControl = Lm_Ctrl)
+
+# Compering the 3 normelized models
+Models_Results_Norm <- resamples(list(LM = Fit_Lm_Norm, 
+                                 GLM = Fit_Glm_Norm, 
+                                 GLMNET = Fit_Glmnet_Norm))
+
+summary(Models_Results_Norm)
+dotplot(Models_Results_Norm)
+
